@@ -1,10 +1,9 @@
-import pytest
-
-import pytz
 import numpy as np
+import pytest
+import pytz
+
 import pandas as pd
-from pandas import (merge_asof, read_csv,
-                    to_datetime, Timedelta)
+from pandas import Timedelta, merge_asof, read_csv, to_datetime
 from pandas.core.reshape.merge import MergeError
 from pandas.util.testing import assert_frame_equal
 
@@ -621,22 +620,22 @@ class TestAsOfMerge(object):
     def test_tolerance_tz(self):
         # GH 14844
         left = pd.DataFrame(
-            {'date': pd.DatetimeIndex(start=pd.to_datetime('2016-01-02'),
-                                      freq='D', periods=5,
-                                      tz=pytz.timezone('UTC')),
+            {'date': pd.date_range(start=pd.to_datetime('2016-01-02'),
+                                   freq='D', periods=5,
+                                   tz=pytz.timezone('UTC')),
              'value1': np.arange(5)})
         right = pd.DataFrame(
-            {'date': pd.DatetimeIndex(start=pd.to_datetime('2016-01-01'),
-                                      freq='D', periods=5,
-                                      tz=pytz.timezone('UTC')),
+            {'date': pd.date_range(start=pd.to_datetime('2016-01-01'),
+                                   freq='D', periods=5,
+                                   tz=pytz.timezone('UTC')),
              'value2': list("ABCDE")})
         result = pd.merge_asof(left, right, on='date',
                                tolerance=pd.Timedelta('1 day'))
 
         expected = pd.DataFrame(
-            {'date': pd.DatetimeIndex(start=pd.to_datetime('2016-01-02'),
-                                      freq='D', periods=5,
-                                      tz=pytz.timezone('UTC')),
+            {'date': pd.date_range(start=pd.to_datetime('2016-01-02'),
+                                   freq='D', periods=5,
+                                   tz=pytz.timezone('UTC')),
              'value1': np.arange(5),
              'value2': list("BCDEE")})
         assert_frame_equal(result, expected)
@@ -1023,3 +1022,17 @@ class TestAsOfMerge(object):
                 merge_asof(df_null, df, on='a')
             else:
                 merge_asof(df, df_null, on='a')
+
+    def test_merge_by_col_tz_aware(self):
+        # GH 21184
+        left = pd.DataFrame(
+            {'by_col': pd.DatetimeIndex(['2018-01-01']).tz_localize('UTC'),
+             'on_col': [2], 'values': ['a']})
+        right = pd.DataFrame(
+            {'by_col': pd.DatetimeIndex(['2018-01-01']).tz_localize('UTC'),
+             'on_col': [1], 'values': ['b']})
+        result = pd.merge_asof(left, right, by='by_col', on='on_col')
+        expected = pd.DataFrame([
+            [pd.Timestamp('2018-01-01', tz='UTC'), 2, 'a', 'b']
+        ], columns=['by_col', 'on_col', 'values_x', 'values_y'])
+        assert_frame_equal(result, expected)

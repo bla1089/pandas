@@ -201,7 +201,7 @@ except (AttributeError, KeyError):
     pass
 
 
-def load(fh, encoding=None, compat=False, is_verbose=False):
+def load(fh, encoding=None, is_verbose=False):
     """load a pickle, with a provided encoding
 
     if compat is True:
@@ -210,10 +210,9 @@ def load(fh, encoding=None, compat=False, is_verbose=False):
 
     Parameters
     ----------
-    fh: a filelike object
-    encoding: an optional encoding
-    compat: provide Series compatibility mode, boolean, default False
-    is_verbose: show exception output
+    fh : a filelike object
+    encoding : an optional encoding
+    is_verbose : show exception output
     """
 
     try:

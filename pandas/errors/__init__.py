@@ -9,9 +9,9 @@ from pandas._libs.tslibs import OutOfBoundsDatetime
 
 class PerformanceWarning(Warning):
     """
-    Warning raised when there is a possible
-    performance impact.
+    Warning raised when there is a possible performance impact.
     """
+
 
 class UnsupportedFunctionCall(ValueError):
     """
@@ -20,19 +20,27 @@ class UnsupportedFunctionCall(ValueError):
     the object e.g. ``np.cumsum(groupby_object)``.
     """
 
+
 class UnsortedIndexError(KeyError):
     """
     Error raised when attempting to get a slice of a MultiIndex,
     and the index has not been lexsorted. Subclass of `KeyError`.
 
     .. versionadded:: 0.20.0
-
     """
 
 
 class ParserError(ValueError):
     """
-    Exception that is raised by an error encountered in `pd.read_csv`.
+    Exception that is raised by an error encountered in parsing file contents.
+
+    This is a generic error raised for errors encountered when functions like
+    `read_csv` or `read_html` are parsing contents of a file.
+
+    See Also
+    --------
+    read_csv : Read CSV (comma-separated) file into a DataFrame.
+    read_html : Read HTML table into a DataFrame.
     """
 
 
@@ -46,8 +54,8 @@ class DtypeWarning(Warning):
 
     See Also
     --------
-    pandas.read_csv : Read CSV (comma-separated) file into a DataFrame.
-    pandas.read_table : Read general delimited file into a DataFrame.
+    read_csv : Read CSV (comma-separated) file into a DataFrame.
+    read_table : Read general delimited file into a DataFrame.
 
     Notes
     -----
@@ -181,4 +189,4 @@ class AbstractMethodError(NotImplementedError):
         else:
             name = self.class_instance.__class__.__name__
         msg = "This {methodtype} must be defined in the concrete class {name}"
-        return (msg.format(methodtype=self.methodtype, name=name))
+        return msg.format(methodtype=self.methodtype, name=name)

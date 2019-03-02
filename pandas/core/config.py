@@ -48,13 +48,13 @@ Implementation
 
 """
 
-import re
-
 from collections import namedtuple
 from contextlib import contextmanager
+import re
 import warnings
-from pandas.compat import map, lmap, u
+
 import pandas.compat as compat
+from pandas.compat import lmap, map, u
 
 DeprecatedOption = namedtuple('DeprecatedOption', 'key msg rkey removal_ver')
 RegisteredOption = namedtuple('RegisteredOption',
@@ -282,8 +282,8 @@ pat : str
     Note: partial matches are supported for convenience, but unless you use the
     full option name (e.g. x.y.z.option_name), your code may break in future
     versions if new options with similar names are introduced.
-value :
-    new value of option.
+value : object
+    New value of option.
 
 Returns
 -------
@@ -385,7 +385,6 @@ class option_context(object):
 
     >>> with option_context('display.max_rows', 10, 'display.max_columns', 5):
     ...     ...
-
     """
 
     def __init__(self, *args):
@@ -396,11 +395,8 @@ class option_context(object):
         self.ops = list(zip(args[::2], args[1::2]))
 
     def __enter__(self):
-        undo = []
-        for pat, val in self.ops:
-            undo.append((pat, _get_option(pat, silent=True)))
-
-        self.undo = undo
+        self.undo = [(pat, _get_option(pat, silent=True))
+                     for pat, val in self.ops]
 
         for pat, val in self.ops:
             _set_option(pat, val, silent=True)

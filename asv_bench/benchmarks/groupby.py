@@ -1,18 +1,20 @@
-import warnings
-from string import ascii_letters
-from itertools import product
 from functools import partial
+from itertools import product
+from string import ascii_letters
+import warnings
 
 import numpy as np
-from pandas import (DataFrame, Series, MultiIndex, date_range, period_range,
-                    TimeGrouper, Categorical, Timestamp)
+
+from pandas import (
+    Categorical, DataFrame, MultiIndex, Series, TimeGrouper, Timestamp,
+    date_range, period_range)
 import pandas.util.testing as tm
 
 
 method_blacklist = {
     'object': {'median', 'prod', 'sem', 'cumsum', 'sum', 'cummin', 'mean',
                'max', 'skew', 'cumprod', 'cummax', 'rank', 'pct_change', 'min',
-               'var', 'mad', 'describe', 'std'},
+               'var', 'mad', 'describe', 'std', 'quantile'},
     'datetime': {'median', 'prod', 'sem', 'cumsum', 'sum', 'mean', 'skew',
                  'cumprod', 'cummax', 'pct_change', 'var', 'mad', 'describe',
                  'std'}
@@ -210,7 +212,7 @@ class CountMultiInt(object):
 
 class AggFunctions(object):
 
-    def setup_cache():
+    def setup_cache(self):
         N = 10**5
         fac1 = np.array(['A', 'B', 'C'], dtype='O')
         fac2 = np.array(['one', 'two'], dtype='O')
@@ -314,8 +316,9 @@ class GroupByMethods(object):
               ['all', 'any', 'bfill', 'count', 'cumcount', 'cummax', 'cummin',
                'cumprod', 'cumsum', 'describe', 'ffill', 'first', 'head',
                'last', 'mad', 'max', 'min', 'median', 'mean', 'nunique',
-               'pct_change', 'prod', 'rank', 'sem', 'shift', 'size', 'skew',
-               'std', 'sum', 'tail', 'unique', 'value_counts', 'var'],
+               'pct_change', 'prod', 'quantile', 'rank', 'sem', 'shift',
+               'size', 'skew', 'std', 'sum', 'tail', 'unique', 'value_counts',
+               'var'],
               ['direct', 'transformation']]
 
     def setup(self, dtype, method, application):
@@ -471,8 +474,8 @@ class Transform(object):
         n1 = 400
         n2 = 250
         index = MultiIndex(levels=[np.arange(n1), tm.makeStringIndex(n2)],
-                           labels=[np.repeat(range(n1), n2).tolist(),
-                                   list(range(n2)) * n1],
+                           codes=[np.repeat(range(n1), n2).tolist(),
+                                  list(range(n2)) * n1],
                            names=['lev1', 'lev2'])
         arr = np.random.randn(n1 * n2, 3)
         arr[::10000, 0] = np.nan

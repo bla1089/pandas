@@ -65,8 +65,10 @@ class TestSeriesConstructors():
 
         assert not empty_series.index.is_all_dates
         assert not Series({}).index.is_all_dates
-        pytest.raises(Exception, Series, np.random.randn(3, 3),
-                      index=np.arange(3))
+
+        # exception raised is of type Exception
+        with pytest.raises(Exception, match="Data must be 1-dimensional"):
+            Series(np.random.randn(3, 3), index=np.arange(3))
 
         mixed.name = 'Series'
         rs = Series(mixed).name
@@ -75,7 +77,9 @@ class TestSeriesConstructors():
 
         # raise on MultiIndex GH4187
         m = MultiIndex.from_arrays([[1, 2], [3, 4]])
-        pytest.raises(NotImplementedError, Series, m)
+        msg = "initializing a Series from a MultiIndex is not supported"
+        with pytest.raises(NotImplementedError, match=msg):
+            Series(m)
 
     @pytest.mark.parametrize('input_class', [list, dict, OrderedDict])
     def test_constructor_empty(self, input_class):
@@ -133,6 +137,17 @@ class TestSeriesConstructors():
     def test_constructor_no_data_index_order(self):
         result = pd.Series(index=['b', 'a', 'c'])
         assert result.index.tolist() == ['b', 'a', 'c']
+
+    def test_constructor_no_data_string_type(self):
+        # GH 22477
+        result = pd.Series(index=[1], dtype=str)
+        assert np.isnan(result.iloc[0])
+
+    @pytest.mark.parametrize('item', ['entry', 'ѐ', 13])
+    def test_constructor_string_element_string_type(self, item):
+        # GH 22477
+        result = pd.Series(item, index=[1], dtype=str)
+        assert result.iloc[0] == str(item)
 
     def test_constructor_dtype_str_na_values(self, string_dtype):
         # https://github.com/pandas-dev/pandas/issues/21083
@@ -440,6 +455,13 @@ class TestSeriesConstructors():
                            datetime(2001, 1, 3)], index=index, dtype='M8[ns]')
         assert_series_equal(result, expected)
 
+    def test_constructor_maskedarray_hardened(self):
+        # Check numpy masked arrays with hard masks -- from GH24574
+        data = ma.masked_all((3, ), dtype=float).harden_mask()
+        result = pd.Series(data)
+        expected = pd.Series([nan, nan, nan])
+        tm.assert_series_equal(result, expected)
+
     def test_series_ctor_plus_datetimeindex(self):
         rng = date_range('20090415', '20090519', freq='B')
         data = {k: 1 for k in rng}
@@ -477,7 +499,9 @@ class TestSeriesConstructors():
         # GH 19342
         # construction with single-element container and index
         # should raise
-        pytest.raises(ValueError, Series, ['foo'], index=['a', 'b', 'c'])
+        msg = "Length of passed values is 1, index implies 3"
+        with pytest.raises(ValueError, match=msg):
+            Series(['foo'], index=['a', 'b', 'c'])
 
     def test_constructor_corner(self):
         df = tm.makeTimeDataFrame()
@@ -657,10 +681,17 @@ class TestSeriesConstructors():
         assert s.dtype == 'M8[ns]'
 
         # GH3414 related
+        # msg = (r"cannot astype a datetimelike from \[datetime64\[ns\]\] to"
+        #        r" \[int32\]")
+        # with pytest.raises(TypeError, match=msg):
+        #     Series(Series(dates).astype('int') / 1000000, dtype='M8[ms]')
         pytest.raises(TypeError, lambda x: Series(
             Series(dates).astype('int') / 1000000, dtype='M8[ms]'))
-        pytest.raises(TypeError,
-                      lambda x: Series(dates, dtype='datetime64'))
+
+        msg = (r"The 'datetime64' dtype has no unit\. Please pass in"
+               r" 'datetime64\[ns\]' instead\.")
+        with pytest.raises(ValueError, match=msg):
+            Series(dates, dtype='datetime64')
 
         # invalid dates can be help as object
         result = Series([datetime(2, 1, 1)])
@@ -795,12 +826,12 @@ class TestSeriesConstructors():
         s = Series([pd.Timestamp('2013-01-01 13:00:00-0800', tz='US/Pacific'),
                     pd.Timestamp('2013-01-02 14:00:00-0800', tz='US/Pacific')])
         assert s.dtype == 'datetime64[ns, US/Pacific]'
-        assert lib.infer_dtype(s) == 'datetime64'
+        assert lib.infer_dtype(s, skipna=True) == 'datetime64'
 
         s = Series([pd.Timestamp('2013-01-01 13:00:00-0800', tz='US/Pacific'),
                     pd.Timestamp('2013-01-02 14:00:00-0800', tz='US/Eastern')])
         assert s.dtype == 'object'
-        assert lib.infer_dtype(s) == 'datetime'
+        assert lib.infer_dtype(s, skipna=True) == 'datetime'
 
         # with all NaT
         s = Series(pd.NaT, index=[0, 1], dtype='datetime64[ns, US/Eastern]')
@@ -966,9 +997,11 @@ class TestSeriesConstructors():
 
     def test_constructor_set(self):
         values = {1, 2, 3, 4, 5}
-        pytest.raises(TypeError, Series, values)
+        with pytest.raises(TypeError, match="'set' type is unordered"):
+            Series(values)
         values = frozenset(values)
-        pytest.raises(TypeError, Series, values)
+        with pytest.raises(TypeError, match="'frozenset' type is unordered"):
+            Series(values)
 
     # https://github.com/pandas-dev/pandas/issues/22698
     @pytest.mark.filterwarnings("ignore:elementwise comparison:FutureWarning")
@@ -1063,13 +1096,15 @@ class TestSeriesConstructors():
         td.astype('int64')
 
         # invalid casting
-        pytest.raises(TypeError, td.astype, 'int32')
+        msg = (r"cannot astype a timedelta from \[timedelta64\[ns\]\] to"
+               r" \[int32\]")
+        with pytest.raises(TypeError, match=msg):
+            td.astype('int32')
 
         # this is an invalid casting
-        def f():
+        msg = "Could not convert object to NumPy timedelta"
+        with pytest.raises(ValueError, match=msg):
             Series([timedelta(days=1), 'foo'], dtype='m8[ns]')
-
-        pytest.raises(Exception, f)
 
         # leave as object here
         td = Series([timedelta(days=i) for i in range(3)] + ['foo'])
@@ -1116,9 +1151,11 @@ class TestSeriesConstructors():
                 assert s.name == n
 
     def test_constructor_name_unhashable(self):
+        msg = r"Series\.name must be a hashable type"
         for n in [['name_list'], np.ones(2), {1: 2}]:
             for data in [['name_list'], np.ones(2), {1: 2}]:
-                pytest.raises(TypeError, Series, data, name=n)
+                with pytest.raises(TypeError, match=msg):
+                    Series(data, name=n)
 
     def test_auto_conversion(self):
         series = Series(list(date_range('1/1/2000', periods=10)))

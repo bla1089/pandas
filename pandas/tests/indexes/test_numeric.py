@@ -1,15 +1,17 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime
+import re
 
 import numpy as np
 import pytest
 
 from pandas._libs.tslibs import Timestamp
-from pandas.compat import range
+from pandas.compat import PY2, range
 
 import pandas as pd
 from pandas import Float64Index, Index, Int64Index, Series, UInt64Index
+from pandas.api.types import pandas_dtype
 from pandas.tests.indexes.common import Base
 import pandas.util.testing as tm
 
@@ -47,12 +49,6 @@ class Numeric(Base):
         expected = Float64Index(-arr)
         a = np.zeros(5, dtype='float64')
         result = a - fidx
-        tm.assert_index_equal(result, expected)
-
-    def test_ufunc_compat(self):
-        idx = self._holder(np.arange(5, dtype='int64'))
-        result = np.sin(idx)
-        expected = Float64Index(np.sin(np.arange(5, dtype='int64')))
         tm.assert_index_equal(result, expected)
 
     def test_index_groupby(self):
@@ -159,12 +155,22 @@ class TestFloat64Index(Numeric):
         result = Index(np.array([np.nan]))
         assert pd.isna(result.values).all()
 
+    @pytest.mark.skipif(PY2, reason="pytest.raises match regex fails")
     def test_constructor_invalid(self):
 
         # invalid
-        pytest.raises(TypeError, Float64Index, 0.)
-        pytest.raises(TypeError, Float64Index, ['a', 'b', 0.])
-        pytest.raises(TypeError, Float64Index, [Timestamp('20130101')])
+        msg = (r"Float64Index\(\.\.\.\) must be called with a collection of"
+               r" some kind, 0\.0 was passed")
+        with pytest.raises(TypeError, match=msg):
+            Float64Index(0.)
+        msg = ("String dtype not supported, you may need to explicitly cast to"
+               " a numeric type")
+        with pytest.raises(TypeError, match=msg):
+            Float64Index(['a', 'b', 0.])
+        msg = (r"float\(\) argument must be a string or a number, not"
+               " 'Timestamp'")
+        with pytest.raises(TypeError, match=msg):
+            Float64Index([Timestamp('20130101')])
 
     def test_constructor_coerce(self):
 
@@ -222,12 +228,17 @@ class TestFloat64Index(Numeric):
 
         # invalid
         for dtype in ['M8[ns]', 'm8[ns]']:
-            pytest.raises(TypeError, lambda: i.astype(dtype))
+            msg = ("Cannot convert Float64Index to dtype {}; integer values"
+                   " are required for conversion").format(pandas_dtype(dtype))
+            with pytest.raises(TypeError, match=re.escape(msg)):
+                i.astype(dtype)
 
         # GH 13149
         for dtype in ['int16', 'int32', 'int64']:
             i = Float64Index([0, 1.1, np.NAN])
-            pytest.raises(ValueError, lambda: i.astype(dtype))
+            msg = "Cannot convert NA to integer"
+            with pytest.raises(ValueError, match=msg):
+                i.astype(dtype)
 
     def test_type_coercion_fail(self, any_int_dtype):
         # see gh-15832
@@ -281,12 +292,16 @@ class TestFloat64Index(Numeric):
             assert idx.get_loc(1.1, method) == loc
             assert idx.get_loc(1.1, method, tolerance=0.9) == loc
 
-        pytest.raises(KeyError, idx.get_loc, 'foo')
-        pytest.raises(KeyError, idx.get_loc, 1.5)
-        pytest.raises(KeyError, idx.get_loc, 1.5, method='pad',
-                      tolerance=0.1)
-        pytest.raises(KeyError, idx.get_loc, True)
-        pytest.raises(KeyError, idx.get_loc, False)
+        with pytest.raises(KeyError, match="^'foo'$"):
+            idx.get_loc('foo')
+        with pytest.raises(KeyError, match=r"^1\.5$"):
+            idx.get_loc(1.5)
+        with pytest.raises(KeyError, match=r"^1\.5$"):
+            idx.get_loc(1.5, method='pad', tolerance=0.1)
+        with pytest.raises(KeyError, match="^True$"):
+            idx.get_loc(True)
+        with pytest.raises(KeyError, match="^False$"):
+            idx.get_loc(False)
 
         with pytest.raises(ValueError, match='must be numeric'):
             idx.get_loc(1.4, method='nearest', tolerance='foo')
@@ -316,15 +331,20 @@ class TestFloat64Index(Numeric):
         # not representable by slice
         idx = Float64Index([np.nan, 1, np.nan, np.nan])
         assert idx.get_loc(1) == 1
-        pytest.raises(KeyError, idx.slice_locs, np.nan)
+        msg = "'Cannot get left slice bound for non-unique label: nan"
+        with pytest.raises(KeyError, match=msg):
+            idx.slice_locs(np.nan)
 
     def test_get_loc_missing_nan(self):
         # GH 8569
         idx = Float64Index([1, 2])
         assert idx.get_loc(1) == 0
-        pytest.raises(KeyError, idx.get_loc, 3)
-        pytest.raises(KeyError, idx.get_loc, np.nan)
-        pytest.raises(KeyError, idx.get_loc, [np.nan])
+        with pytest.raises(KeyError, match=r"^3\.0$"):
+            idx.get_loc(3)
+        with pytest.raises(KeyError, match="^nan$"):
+            idx.get_loc(np.nan)
+        with pytest.raises(KeyError, match=r"^\[nan\]$"):
+            idx.get_loc([np.nan])
 
     def test_contains_nans(self):
         i = Float64Index([1.0, 2.0, np.nan])
@@ -404,9 +424,7 @@ class TestFloat64Index(Numeric):
 
 class NumericInt(Numeric):
 
-    def test_view(self, indices):
-        super(NumericInt, self).test_view(indices)
-
+    def test_view(self):
         i = self._holder([], name='Foo')
         i_view = i.view()
         assert i_view.name == 'Foo'
@@ -488,11 +506,10 @@ class NumericInt(Numeric):
         exp_ridx = np.array([2, 3, 2, 3, 0, 1, 0, 1], dtype=np.intp)
         tm.assert_numpy_array_equal(ridx, exp_ridx)
 
-    def test_join_self(self):
-        kinds = 'outer', 'inner', 'left', 'right'
-        for kind in kinds:
-            joined = self.index.join(self.index, how=kind)
-            assert self.index is joined
+    @pytest.mark.parametrize('kind', ['outer', 'inner', 'left', 'right'])
+    def test_join_self(self, kind):
+        joined = self.index.join(self.index, how=kind)
+        assert self.index is joined
 
     def test_union_noncomparable(self):
         from datetime import datetime, timedelta
@@ -508,13 +525,17 @@ class NumericInt(Numeric):
         tm.assert_index_equal(result, expected)
 
     def test_cant_or_shouldnt_cast(self):
+        msg = ("String dtype not supported, you may need to explicitly cast to"
+               " a numeric type")
         # can't
         data = ['foo', 'bar', 'baz']
-        pytest.raises(TypeError, self._holder, data)
+        with pytest.raises(TypeError, match=msg):
+            self._holder(data)
 
         # shouldn't
         data = ['0', '1', '2']
-        pytest.raises(TypeError, self._holder, data)
+        with pytest.raises(TypeError, match=msg):
+            self._holder(data)
 
     def test_view_index(self):
         self.index.view(Index)
@@ -585,7 +606,10 @@ class TestInt64Index(NumericInt):
         tm.assert_index_equal(index, expected)
 
         # scalar raise Exception
-        pytest.raises(TypeError, Int64Index, 5)
+        msg = (r"Int64Index\(\.\.\.\) must be called with a collection of some"
+               " kind, 5 was passed")
+        with pytest.raises(TypeError, match=msg):
+            Int64Index(5)
 
         # copy
         arr = self.index.values
@@ -627,6 +651,12 @@ class TestInt64Index(NumericInt):
 
         with pytest.raises(OverflowError, match=msg):
             Index([-1], dtype=uint_dtype)
+
+    def test_constructor_unwraps_index(self):
+        idx = pd.Index([1, 2])
+        result = pd.Int64Index(idx)
+        expected = np.array([1, 2], dtype='int64')
+        tm.assert_numpy_array_equal(result._data, expected)
 
     def test_coerce_list(self):
         # coerce things

@@ -2,21 +2,20 @@
 # pylint: disable-msg=E1101,W0612
 
 from datetime import datetime, timedelta
-import pytest
 import re
 
-from numpy import nan as NA
 import numpy as np
+from numpy import nan as NA
 from numpy.random import randint
+import pytest
 
-from pandas.compat import range, u
 import pandas.compat as compat
-from pandas import Index, Series, DataFrame, isna, MultiIndex, notna, concat
+from pandas.compat import PY2, PY3, range, u
 
-from pandas.util.testing import assert_series_equal, assert_index_equal
-import pandas.util.testing as tm
-
+from pandas import DataFrame, Index, MultiIndex, Series, concat, isna, notna
 import pandas.core.strings as strings
+import pandas.util.testing as tm
+from pandas.util.testing import assert_index_equal, assert_series_equal
 
 
 def assert_series_or_index_equal(left, right):
@@ -24,6 +23,147 @@ def assert_series_or_index_equal(left, right):
         assert_series_equal(left, right)
     else:  # Index
         assert_index_equal(left, right)
+
+
+_any_string_method = [
+    ('cat',           (),                     {'sep': ','}),       # noqa: E241
+    ('cat',           (Series(list('zyx')),), {'sep': ',',         # noqa: E241
+                                               'join': 'left'}),
+    ('center',        (10,),                  {}),                 # noqa: E241
+    ('contains',      ('a',),                 {}),                 # noqa: E241
+    ('count',         ('a',),                 {}),                 # noqa: E241
+    ('decode',        ('UTF-8',),             {}),                 # noqa: E241
+    ('encode',        ('UTF-8',),             {}),                 # noqa: E241
+    ('endswith',      ('a',),                 {}),                 # noqa: E241
+    ('extract',       ('([a-z]*)',),          {'expand': False}),  # noqa: E241
+    ('extract',       ('([a-z]*)',),          {'expand': True}),   # noqa: E241
+    ('extractall',    ('([a-z]*)',),          {}),                 # noqa: E241
+    ('find',          ('a',),                 {}),                 # noqa: E241
+    ('findall',       ('a',),                 {}),                 # noqa: E241
+    ('get',           (0,),                   {}),                 # noqa: E241
+    # because "index" (and "rindex") fail intentionally
+    # if the string is not found, search only for empty string
+    ('index',         ('',),                  {}),                 # noqa: E241
+    ('join',          (',',),                 {}),                 # noqa: E241
+    ('ljust',         (10,),                  {}),                 # noqa: E241
+    ('match',         ('a',),                 {}),                 # noqa: E241
+    ('normalize',     ('NFC',),               {}),                 # noqa: E241
+    ('pad',           (10,),                  {}),                 # noqa: E241
+    ('partition',     (' ',),                 {'expand': False}),  # noqa: E241
+    ('partition',     (' ',),                 {'expand': True}),   # noqa: E241
+    ('repeat',        (3,),                   {}),                 # noqa: E241
+    ('replace',       ('a', 'z',),            {}),                 # noqa: E241
+    ('rfind',         ('a',),                 {}),                 # noqa: E241
+    ('rindex',        ('',),                  {}),                 # noqa: E241
+    ('rjust',         (10,),                  {}),                 # noqa: E241
+    ('rpartition',    (' ',),                 {'expand': False}),  # noqa: E241
+    ('rpartition',    (' ',),                 {'expand': True}),   # noqa: E241
+    ('slice',         (0, 1,),                {}),                 # noqa: E241
+    ('slice_replace', (0, 1, 'z',),           {}),                 # noqa: E241
+    ('split',         (' ',),                 {'expand': False}),  # noqa: E241
+    ('split',         (' ',),                 {'expand': True}),   # noqa: E241
+    ('startswith',    ('a',),                 {}),                 # noqa: E241
+    # translating unicode points of "a" to "d"
+    ('translate',     ({97: 100},),           {}),                 # noqa: E241
+    ('wrap',          (2,),                   {}),                 # noqa: E241
+    ('zfill',         (10,),                  {})                  # noqa: E241
+] + list(zip([
+    # methods without positional arguments: zip with empty tuple and empty dict
+    'capitalize', 'cat', 'get_dummies',
+    'isalnum', 'isalpha', 'isdecimal',
+    'isdigit', 'islower', 'isnumeric',
+    'isspace', 'istitle', 'isupper',
+    'len', 'lower', 'lstrip', 'partition',
+    'rpartition', 'rsplit', 'rstrip',
+    'slice', 'slice_replace', 'split',
+    'strip', 'swapcase', 'title', 'upper', 'casefold'
+], [()] * 100, [{}] * 100))
+ids, _, _ = zip(*_any_string_method)  # use method name as fixture-id
+
+
+# test that the above list captures all methods of StringMethods
+missing_methods = {f for f in dir(strings.StringMethods)
+                   if not f.startswith('_')} - set(ids)
+assert not missing_methods
+
+
+@pytest.fixture(params=_any_string_method, ids=ids)
+def any_string_method(request):
+    """
+    Fixture for all public methods of `StringMethods`
+
+    This fixture returns a tuple of the method name and sample arguments
+    necessary to call the method.
+
+    Returns
+    -------
+    method_name : str
+        The name of the method in `StringMethods`
+    args : tuple
+        Sample values for the positional arguments
+    kwargs : dict
+        Sample values for the keyword arguments
+
+    Examples
+    --------
+    >>> def test_something(any_string_method):
+    ...     s = pd.Series(['a', 'b', np.nan, 'd'])
+    ...
+    ...     method_name, args, kwargs = any_string_method
+    ...     method = getattr(s.str, method_name)
+    ...     # will not raise
+    ...     method(*args, **kwargs)
+    """
+    return request.param
+
+
+# subset of the full set from pandas/conftest.py
+_any_allowed_skipna_inferred_dtype = [
+    ('string', ['a', np.nan, 'c']),
+    ('unicode' if not PY3 else 'string', [u('a'), np.nan, u('c')]),
+    ('bytes' if PY3 else 'string', [b'a', np.nan, b'c']),
+    ('empty', [np.nan, np.nan, np.nan]),
+    ('empty', []),
+    ('mixed-integer', ['a', np.nan, 2])
+]
+ids, _ = zip(*_any_allowed_skipna_inferred_dtype)  # use inferred type as id
+
+
+@pytest.fixture(params=_any_allowed_skipna_inferred_dtype, ids=ids)
+def any_allowed_skipna_inferred_dtype(request):
+    """
+    Fixture for all (inferred) dtypes allowed in StringMethods.__init__
+
+    The covered (inferred) types are:
+    * 'string'
+    * 'unicode' (if PY2)
+    * 'empty'
+    * 'bytes' (if PY3)
+    * 'mixed'
+    * 'mixed-integer'
+
+    Returns
+    -------
+    inferred_dtype : str
+        The string for the inferred dtype from _libs.lib.infer_dtype
+    values : np.ndarray
+        An array of object dtype that will be inferred to have
+        `inferred_dtype`
+
+    Examples
+    --------
+    >>> import pandas._libs.lib as lib
+    >>>
+    >>> def test_something(any_allowed_skipna_inferred_dtype):
+    ...     inferred_dtype, values = any_allowed_skipna_inferred_dtype
+    ...     # will pass
+    ...     assert lib.infer_dtype(values, skipna=True) == inferred_dtype
+    """
+    inferred_dtype, values = request.param
+    values = np.array(values, dtype=object)  # object dtype to avoid casting
+
+    # correctness of inference tested in tests/dtypes/test_inference.py
+    return inferred_dtype, values
 
 
 class TestStringMethods(object):
@@ -34,11 +174,121 @@ class TestStringMethods(object):
         assert Series.str is strings.StringMethods
         assert isinstance(Series(['']).str, strings.StringMethods)
 
-        # GH 9184
-        invalid = Series([1])
-        with pytest.raises(AttributeError, match="only use .str accessor"):
-            invalid.str
-        assert not hasattr(invalid, 'str')
+    @pytest.mark.parametrize('dtype', [object, 'category'])
+    @pytest.mark.parametrize('box', [Series, Index])
+    def test_api_per_dtype(self, box, dtype, any_skipna_inferred_dtype):
+        # one instance of parametrized fixture
+        inferred_dtype, values = any_skipna_inferred_dtype
+
+        t = box(values, dtype=dtype)  # explicit dtype to avoid casting
+
+        # TODO: get rid of these xfails
+        if dtype == 'category' and inferred_dtype in ['period', 'interval']:
+            pytest.xfail(reason='Conversion to numpy array fails because '
+                         'the ._values-attribute is not a numpy array for '
+                         'PeriodArray/IntervalArray; see GH 23553')
+        if box == Index and inferred_dtype in ['empty', 'bytes']:
+            pytest.xfail(reason='Raising too restrictively; '
+                         'solved by GH 23167')
+        if (box == Index and dtype == object
+                and inferred_dtype in ['boolean', 'date', 'time']):
+            pytest.xfail(reason='Inferring incorrectly because of NaNs; '
+                         'solved by GH 23167')
+        if (box == Series
+                and (dtype == object and inferred_dtype not in [
+                    'string', 'unicode', 'empty',
+                    'bytes', 'mixed', 'mixed-integer'])
+                or (dtype == 'category'
+                    and inferred_dtype in ['decimal', 'boolean', 'time'])):
+            pytest.xfail(reason='Not raising correctly; solved by GH 23167')
+
+        types_passing_constructor = ['string', 'unicode', 'empty',
+                                     'bytes', 'mixed', 'mixed-integer']
+        if inferred_dtype in types_passing_constructor:
+            # GH 6106
+            assert isinstance(t.str, strings.StringMethods)
+        else:
+            # GH 9184, GH 23011, GH 23163
+            with pytest.raises(AttributeError, match='Can only use .str '
+                               'accessor with string values.*'):
+                t.str
+            assert not hasattr(t, 'str')
+
+    @pytest.mark.parametrize('dtype', [object, 'category'])
+    @pytest.mark.parametrize('box', [Series, Index])
+    def test_api_per_method(self, box, dtype,
+                            any_allowed_skipna_inferred_dtype,
+                            any_string_method):
+        # this test does not check correctness of the different methods,
+        # just that the methods work on the specified (inferred) dtypes,
+        # and raise on all others
+
+        # one instance of each parametrized fixture
+        inferred_dtype, values = any_allowed_skipna_inferred_dtype
+        method_name, args, kwargs = any_string_method
+
+        # TODO: get rid of these xfails
+        if (method_name not in ['encode', 'decode', 'len']
+                and inferred_dtype == 'bytes'):
+            pytest.xfail(reason='Not raising for "bytes", see GH 23011;'
+                         'Also: malformed method names, see GH 23551; '
+                         'solved by GH 23167')
+        if (method_name == 'cat'
+                and inferred_dtype in ['mixed', 'mixed-integer']):
+            pytest.xfail(reason='Bad error message; should raise better; '
+                         'solved by GH 23167')
+        if box == Index and inferred_dtype in ['empty', 'bytes']:
+            pytest.xfail(reason='Raising too restrictively; '
+                         'solved by GH 23167')
+        if (box == Index and dtype == object
+                and inferred_dtype in ['boolean', 'date', 'time']):
+            pytest.xfail(reason='Inferring incorrectly because of NaNs; '
+                         'solved by GH 23167')
+
+        t = box(values, dtype=dtype)  # explicit dtype to avoid casting
+        method = getattr(t.str, method_name)
+
+        bytes_allowed = method_name in ['encode', 'decode', 'len']
+        # as of v0.23.4, all methods except 'cat' are very lenient with the
+        # allowed data types, just returning NaN for entries that error.
+        # This could be changed with an 'errors'-kwarg to the `str`-accessor,
+        # see discussion in GH 13877
+        mixed_allowed = method_name not in ['cat']
+
+        allowed_types = (['string', 'unicode', 'empty']
+                         + ['bytes'] * bytes_allowed
+                         + ['mixed', 'mixed-integer'] * mixed_allowed)
+
+        if inferred_dtype in allowed_types:
+            # xref GH 23555, GH 23556
+            method(*args, **kwargs)  # works!
+        else:
+            # GH 23011, GH 23163
+            msg = ('Cannot use .str.{name} with values of inferred dtype '
+                   '{inferred_dtype!r}.'.format(name=method_name,
+                                                inferred_dtype=inferred_dtype))
+            with pytest.raises(TypeError, match=msg):
+                method(*args, **kwargs)
+
+    def test_api_for_categorical(self, any_string_method):
+        # https://github.com/pandas-dev/pandas/issues/10661
+        s = Series(list('aabb'))
+        s = s + " " + s
+        c = s.astype('category')
+        assert isinstance(c.str, strings.StringMethods)
+
+        method_name, args, kwargs = any_string_method
+
+        result = getattr(c.str, method_name)(*args, **kwargs)
+        expected = getattr(s.str, method_name)(*args, **kwargs)
+
+        if isinstance(result, DataFrame):
+            tm.assert_frame_equal(result, expected)
+        elif isinstance(result, Series):
+            tm.assert_series_equal(result, expected)
+        else:
+            # str.cat(others=None) returns string, for example
+            assert result == expected
 
     def test_iter(self):
         # GH3638
@@ -377,11 +627,31 @@ class TestStringMethods(object):
         with pytest.raises(ValueError, match=rgx):
             s.str.cat([t, z], join=join)
 
-    def test_str_cat_raises(self):
-        # non-strings hiding behind object dtype
-        s = Series([1, 2, 3, 4], dtype='object')
-        with pytest.raises(TypeError, match="unsupported operand type.*"):
-            s.str.cat(s)
+    @pytest.mark.parametrize('box', [Series, Index])
+    @pytest.mark.parametrize('other', [Series, Index])
+    def test_str_cat_all_na(self, box, other):
+        # GH 24044
+
+        # check that all NaNs in caller / target work
+        s = Index(['a', 'b', 'c', 'd'])
+        s = s if box == Index else Series(s, index=s)
+        t = other([np.nan] * 4, dtype=object)
+        # add index of s for alignment
+        t = t if other == Index else Series(t, index=s)
+
+        # all-NA target
+        if box == Series:
+            expected = Series([np.nan] * 4, index=s.index, dtype=object)
+        else:  # box == Index
+            expected = Index([np.nan] * 4, dtype=object)
+        result = s.str.cat(t, join='left')
+        assert_series_or_index_equal(result, expected)
+
+        # all-NA caller (only for Series)
+        if other == Series:
+            expected = Series([np.nan] * 4, dtype=object, index=t.index)
+            result = t.str.cat(s, join='left')
+            tm.assert_series_equal(result, expected)
 
     def test_str_cat_special_cases(self):
         s = Series(['a', 'b', 'c', 'd'])
@@ -512,10 +782,28 @@ class TestStringMethods(object):
         assert result.dtype == np.bool_
         tm.assert_numpy_array_equal(result, expected)
 
-        # na
-        values = Series(['om', 'foo', np.nan])
-        res = values.str.contains('foo', na="foo")
-        assert res.loc[2] == "foo"
+    def test_contains_for_object_category(self):
+        # gh 22158
+
+        # na for category
+        values = Series(["a", "b", "c", "a", np.nan], dtype="category")
+        result = values.str.contains('a', na=True)
+        expected = Series([True, False, False, True, True])
+        tm.assert_series_equal(result, expected)
+
+        result = values.str.contains('a', na=False)
+        expected = Series([True, False, False, True, False])
+        tm.assert_series_equal(result, expected)
+
+        # na for objects
+        values = Series(["a", "b", "c", "a", np.nan])
+        result = values.str.contains('a', na=True)
+        expected = Series([True, False, False, True, True])
+        tm.assert_series_equal(result, expected)
+
+        result = values.str.contains('a', na=False)
+        expected = Series([True, False, False, True, False])
+        tm.assert_series_equal(result, expected)
 
     def test_startswith(self):
         values = Series(['om', NA, 'foo_nom', 'nom', 'bar_foo', NA, 'foo'])
@@ -714,11 +1002,13 @@ class TestStringMethods(object):
         tm.assert_series_equal(result, exp)
 
         # GH 13438
+        msg = "repl must be a string or callable"
         for klass in (Series, Index):
             for repl in (None, 3, {'a': 'b'}):
                 for data in (['a', 'b', None], ['a', 'b', 'c', 'ad']):
                     values = klass(data)
-                    pytest.raises(TypeError, values.str.replace, 'a', repl)
+                    with pytest.raises(TypeError, match=msg):
+                        values.str.replace('a', repl)
 
     def test_replace_callable(self):
         # GH 15055
@@ -835,10 +1125,14 @@ class TestStringMethods(object):
         callable_repl = lambda m: m.group(0).swapcase()
         compiled_pat = re.compile('[a-z][A-Z]{2}')
 
-        pytest.raises(ValueError, values.str.replace, 'abc', callable_repl,
-                      regex=False)
-        pytest.raises(ValueError, values.str.replace, compiled_pat, '',
-                      regex=False)
+        msg = "Cannot use a callable replacement when regex=False"
+        with pytest.raises(ValueError, match=msg):
+            values.str.replace('abc', callable_repl, regex=False)
+
+        msg = ("Cannot use a compiled regex as replacement pattern with"
+               " regex=False")
+        with pytest.raises(ValueError, match=msg):
+            values.str.replace(compiled_pat, '', regex=False)
 
     def test_repeat(self):
         values = Series(['a', 'b', NA, 'c', NA, 'd'])
@@ -954,12 +1248,13 @@ class TestStringMethods(object):
         for klass in [Series, Index]:
             # no groups
             s_or_idx = klass(['A1', 'B2', 'C3'])
-            f = lambda: s_or_idx.str.extract('[ABC][123]', expand=False)
-            pytest.raises(ValueError, f)
+            msg = "pattern contains no capture groups"
+            with pytest.raises(ValueError, match=msg):
+                s_or_idx.str.extract('[ABC][123]', expand=False)
 
             # only non-capturing groups
-            f = lambda: s_or_idx.str.extract('(?:[AB]).*', expand=False)
-            pytest.raises(ValueError, f)
+            with pytest.raises(ValueError, match=msg):
+                s_or_idx.str.extract('(?:[AB]).*', expand=False)
 
             # single group renames series/index properly
             s_or_idx = klass(['A1', 'A2'])
@@ -1099,12 +1394,13 @@ class TestStringMethods(object):
         for klass in [Series, Index]:
             # no groups
             s_or_idx = klass(['A1', 'B2', 'C3'])
-            f = lambda: s_or_idx.str.extract('[ABC][123]', expand=True)
-            pytest.raises(ValueError, f)
+            msg = "pattern contains no capture groups"
+            with pytest.raises(ValueError, match=msg):
+                s_or_idx.str.extract('[ABC][123]', expand=True)
 
             # only non-capturing groups
-            f = lambda: s_or_idx.str.extract('(?:[AB]).*', expand=True)
-            pytest.raises(ValueError, f)
+            with pytest.raises(ValueError, match=msg):
+                s_or_idx.str.extract('(?:[AB]).*', expand=True)
 
             # single group renames series/index properly
             s_or_idx = klass(['A1', 'A2'])
@@ -2330,24 +2626,35 @@ class TestStringMethods(object):
             s.str.split('_', expand="not_a_boolean")
 
     def test_split_to_multiindex_expand(self):
-        idx = Index(['nosplit', 'alsonosplit'])
+        # https://github.com/pandas-dev/pandas/issues/23677
+
+        idx = Index(['nosplit', 'alsonosplit', np.nan])
         result = idx.str.split('_', expand=True)
         exp = idx
         tm.assert_index_equal(result, exp)
         assert result.nlevels == 1
 
-        idx = Index(['some_equal_splits', 'with_no_nans'])
+        idx = Index(['some_equal_splits', 'with_no_nans', np.nan, None])
         result = idx.str.split('_', expand=True)
-        exp = MultiIndex.from_tuples([('some', 'equal', 'splits'), (
-            'with', 'no', 'nans')])
+        exp = MultiIndex.from_tuples([('some', 'equal', 'splits'),
+                                      ('with', 'no', 'nans'),
+                                      [np.nan, np.nan, np.nan],
+                                      [None, None, None]])
         tm.assert_index_equal(result, exp)
         assert result.nlevels == 3
 
-        idx = Index(['some_unequal_splits', 'one_of_these_things_is_not'])
+        idx = Index(['some_unequal_splits',
+                     'one_of_these_things_is_not',
+                     np.nan, None])
         result = idx.str.split('_', expand=True)
-        exp = MultiIndex.from_tuples([('some', 'unequal', 'splits', NA, NA, NA
-                                       ), ('one', 'of', 'these', 'things',
-                                           'is', 'not')])
+        exp = MultiIndex.from_tuples([('some', 'unequal', 'splits',
+                                       NA, NA, NA),
+                                      ('one', 'of', 'these',
+                                       'things', 'is', 'not'),
+                                      (np.nan, np.nan, np.nan,
+                                       np.nan, np.nan, np.nan),
+                                      (None, None, None,
+                                       None, None, None)])
         tm.assert_index_equal(result, exp)
         assert result.nlevels == 6
 
@@ -2441,50 +2748,54 @@ class TestStringMethods(object):
         tm.assert_index_equal(res, exp)
 
     def test_partition_series(self):
-        values = Series(['a_b_c', 'c_d_e', NA, 'f_g_h'])
+        # https://github.com/pandas-dev/pandas/issues/23558
+
+        values = Series(['a_b_c', 'c_d_e', NA, 'f_g_h', None])
 
         result = values.str.partition('_', expand=False)
         exp = Series([('a', '_', 'b_c'), ('c', '_', 'd_e'), NA,
-                      ('f', '_', 'g_h')])
+                      ('f', '_', 'g_h'), None])
         tm.assert_series_equal(result, exp)
 
         result = values.str.rpartition('_', expand=False)
         exp = Series([('a_b', '_', 'c'), ('c_d', '_', 'e'), NA,
-                      ('f_g', '_', 'h')])
+                      ('f_g', '_', 'h'), None])
         tm.assert_series_equal(result, exp)
 
         # more than one char
-        values = Series(['a__b__c', 'c__d__e', NA, 'f__g__h'])
+        values = Series(['a__b__c', 'c__d__e', NA, 'f__g__h', None])
         result = values.str.partition('__', expand=False)
         exp = Series([('a', '__', 'b__c'), ('c', '__', 'd__e'), NA,
-                      ('f', '__', 'g__h')])
+                      ('f', '__', 'g__h'), None])
         tm.assert_series_equal(result, exp)
 
         result = values.str.rpartition('__', expand=False)
         exp = Series([('a__b', '__', 'c'), ('c__d', '__', 'e'), NA,
-                      ('f__g', '__', 'h')])
+                      ('f__g', '__', 'h'), None])
         tm.assert_series_equal(result, exp)
 
         # None
-        values = Series(['a b c', 'c d e', NA, 'f g h'])
+        values = Series(['a b c', 'c d e', NA, 'f g h', None])
         result = values.str.partition(expand=False)
         exp = Series([('a', ' ', 'b c'), ('c', ' ', 'd e'), NA,
-                      ('f', ' ', 'g h')])
+                      ('f', ' ', 'g h'), None])
         tm.assert_series_equal(result, exp)
 
         result = values.str.rpartition(expand=False)
         exp = Series([('a b', ' ', 'c'), ('c d', ' ', 'e'), NA,
-                      ('f g', ' ', 'h')])
+                      ('f g', ' ', 'h'), None])
         tm.assert_series_equal(result, exp)
 
-        # Not splited
-        values = Series(['abc', 'cde', NA, 'fgh'])
+        # Not split
+        values = Series(['abc', 'cde', NA, 'fgh', None])
         result = values.str.partition('_', expand=False)
-        exp = Series([('abc', '', ''), ('cde', '', ''), NA, ('fgh', '', '')])
+        exp = Series([('abc', '', ''), ('cde', '', ''), NA,
+                      ('fgh', '', ''), None])
         tm.assert_series_equal(result, exp)
 
         result = values.str.rpartition('_', expand=False)
-        exp = Series([('', '', 'abc'), ('', '', 'cde'), NA, ('', '', 'fgh')])
+        exp = Series([('', '', 'abc'), ('', '', 'cde'), NA,
+                      ('', '', 'fgh'), None])
         tm.assert_series_equal(result, exp)
 
         # unicode
@@ -2508,57 +2819,65 @@ class TestStringMethods(object):
         assert result == [v.rpartition('_') for v in values]
 
     def test_partition_index(self):
-        values = Index(['a_b_c', 'c_d_e', 'f_g_h'])
+        # https://github.com/pandas-dev/pandas/issues/23558
+
+        values = Index(['a_b_c', 'c_d_e', 'f_g_h', np.nan, None])
 
         result = values.str.partition('_', expand=False)
-        exp = Index(np.array([('a', '_', 'b_c'), ('c', '_', 'd_e'), ('f', '_',
-                                                                     'g_h')]))
+        exp = Index(np.array([('a', '_', 'b_c'), ('c', '_', 'd_e'),
+                              ('f', '_', 'g_h'), np.nan, None]))
         tm.assert_index_equal(result, exp)
         assert result.nlevels == 1
 
         result = values.str.rpartition('_', expand=False)
-        exp = Index(np.array([('a_b', '_', 'c'), ('c_d', '_', 'e'), (
-            'f_g', '_', 'h')]))
+        exp = Index(np.array([('a_b', '_', 'c'), ('c_d', '_', 'e'),
+                              ('f_g', '_', 'h'), np.nan, None]))
         tm.assert_index_equal(result, exp)
         assert result.nlevels == 1
 
         result = values.str.partition('_')
-        exp = Index([('a', '_', 'b_c'), ('c', '_', 'd_e'), ('f', '_', 'g_h')])
+        exp = Index([('a', '_', 'b_c'), ('c', '_', 'd_e'),
+                     ('f', '_', 'g_h'), (np.nan, np.nan, np.nan),
+                     (None, None, None)])
         tm.assert_index_equal(result, exp)
         assert isinstance(result, MultiIndex)
         assert result.nlevels == 3
 
         result = values.str.rpartition('_')
-        exp = Index([('a_b', '_', 'c'), ('c_d', '_', 'e'), ('f_g', '_', 'h')])
+        exp = Index([('a_b', '_', 'c'), ('c_d', '_', 'e'),
+                     ('f_g', '_', 'h'), (np.nan, np.nan, np.nan),
+                     (None, None, None)])
         tm.assert_index_equal(result, exp)
         assert isinstance(result, MultiIndex)
         assert result.nlevels == 3
 
     def test_partition_to_dataframe(self):
-        values = Series(['a_b_c', 'c_d_e', NA, 'f_g_h'])
+        # https://github.com/pandas-dev/pandas/issues/23558
+
+        values = Series(['a_b_c', 'c_d_e', NA, 'f_g_h', None])
         result = values.str.partition('_')
-        exp = DataFrame({0: ['a', 'c', np.nan, 'f'],
-                         1: ['_', '_', np.nan, '_'],
-                         2: ['b_c', 'd_e', np.nan, 'g_h']})
+        exp = DataFrame({0: ['a', 'c', np.nan, 'f', None],
+                         1: ['_', '_', np.nan, '_', None],
+                         2: ['b_c', 'd_e', np.nan, 'g_h', None]})
         tm.assert_frame_equal(result, exp)
 
         result = values.str.rpartition('_')
-        exp = DataFrame({0: ['a_b', 'c_d', np.nan, 'f_g'],
-                         1: ['_', '_', np.nan, '_'],
-                         2: ['c', 'e', np.nan, 'h']})
+        exp = DataFrame({0: ['a_b', 'c_d', np.nan, 'f_g', None],
+                         1: ['_', '_', np.nan, '_', None],
+                         2: ['c', 'e', np.nan, 'h', None]})
         tm.assert_frame_equal(result, exp)
 
-        values = Series(['a_b_c', 'c_d_e', NA, 'f_g_h'])
+        values = Series(['a_b_c', 'c_d_e', NA, 'f_g_h', None])
         result = values.str.partition('_', expand=True)
-        exp = DataFrame({0: ['a', 'c', np.nan, 'f'],
-                         1: ['_', '_', np.nan, '_'],
-                         2: ['b_c', 'd_e', np.nan, 'g_h']})
+        exp = DataFrame({0: ['a', 'c', np.nan, 'f', None],
+                         1: ['_', '_', np.nan, '_', None],
+                         2: ['b_c', 'd_e', np.nan, 'g_h', None]})
         tm.assert_frame_equal(result, exp)
 
         result = values.str.rpartition('_', expand=True)
-        exp = DataFrame({0: ['a_b', 'c_d', np.nan, 'f_g'],
-                         1: ['_', '_', np.nan, '_'],
-                         2: ['c', 'e', np.nan, 'h']})
+        exp = DataFrame({0: ['a_b', 'c_d', np.nan, 'f_g', None],
+                         1: ['_', '_', np.nan, '_', None],
+                         2: ['c', 'e', np.nan, 'h', None]})
         tm.assert_frame_equal(result, exp)
 
     def test_partition_with_name(self):
@@ -2585,6 +2904,24 @@ class TestStringMethods(object):
         exp = Index(np.array([('a', ',', 'b'), ('c', ',', 'd')]), name='xxx')
         assert res.nlevels == 1
         tm.assert_index_equal(res, exp)
+
+    def test_partition_deprecation(self):
+        # GH 22676; depr kwarg "pat" in favor of "sep"
+        values = Series(['a_b_c', 'c_d_e', NA, 'f_g_h'])
+
+        # str.partition
+        # using sep -> no warning
+        expected = values.str.partition(sep='_')
+        with tm.assert_produces_warning(FutureWarning):
+            result = values.str.partition(pat='_')
+            tm.assert_frame_equal(result, expected)
+
+        # str.rpartition
+        # using sep -> no warning
+        expected = values.str.rpartition(sep='_')
+        with tm.assert_produces_warning(FutureWarning):
+            result = values.str.rpartition(pat='_')
+            tm.assert_frame_equal(result, expected)
 
     def test_pipe_failures(self):
         # #2119
@@ -2614,7 +2951,7 @@ class TestStringMethods(object):
                 expected = Series([s[start:stop:step] if not isna(s) else NA
                                    for s in values])
                 tm.assert_series_equal(result, expected)
-            except:
+            except IndexError:
                 print('failed on %s:%s:%s' % (start, stop, step))
                 raise
 
@@ -2852,7 +3189,7 @@ class TestStringMethods(object):
         expected = Series([np.nan])
         tm.assert_series_equal(result, expected)
 
-    def test_more_contains(self):
+    def test_contains_moar(self):
         # PR #1179
         s = Series(['A', 'B', 'C', 'Aaba', 'Baca', '', NA,
                     'CABA', 'dog', 'cat'])
@@ -2902,7 +3239,7 @@ class TestStringMethods(object):
         expected = Series([np.nan, np.nan, np.nan], dtype=np.object_)
         assert_series_equal(result, expected)
 
-    def test_more_replace(self):
+    def test_replace_moar(self):
         # PR #1179
         s = Series(['A', 'B', 'C', 'Aaba', 'Baca', '', NA, 'CABA',
                     'dog', 'cat'])
@@ -2986,10 +3323,14 @@ class TestStringMethods(object):
 
         tm.assert_series_equal(result, exp)
 
+    @pytest.mark.skipif(PY2, reason="pytest.raises match regex fails")
     def test_encode_decode_errors(self):
         encodeBase = Series([u('a'), u('b'), u('a\x9d')])
 
-        pytest.raises(UnicodeEncodeError, encodeBase.str.encode, 'cp1252')
+        msg = (r"'charmap' codec can't encode character '\\x9d' in position 1:"
+               " character maps to <undefined>")
+        with pytest.raises(UnicodeEncodeError, match=msg):
+            encodeBase.str.encode('cp1252')
 
         f = lambda x: x.encode('cp1252', 'ignore')
         result = encodeBase.str.encode('cp1252', 'ignore')
@@ -2998,7 +3339,10 @@ class TestStringMethods(object):
 
         decodeBase = Series([b'a', b'b', b'a\x9d'])
 
-        pytest.raises(UnicodeDecodeError, decodeBase.str.decode, 'cp1252')
+        msg = ("'charmap' codec can't decode byte 0x9d in position 1:"
+               " character maps to <undefined>")
+        with pytest.raises(UnicodeDecodeError, match=msg):
+            decodeBase.str.decode('cp1252')
 
         f = lambda x: x.decode('cp1252', 'ignore')
         result = decodeBase.str.decode('cp1252', 'ignore')
@@ -3089,9 +3433,19 @@ class TestStringMethods(object):
         lhs = Series(np.array(list('abc'), 'S1').astype(object))
         rhs = Series(np.array(list('def'), 'S1').astype(object))
         if compat.PY3:
-            pytest.raises(TypeError, lhs.str.cat, rhs)
+            with pytest.raises(TypeError, match="can't concat str to bytes"):
+                lhs.str.cat(rhs)
         else:
             result = lhs.str.cat(rhs)
             expected = Series(np.array(
                 ['ad', 'be', 'cf'], 'S2').astype(object))
             tm.assert_series_equal(result, expected)
+
+    @pytest.mark.skipif(compat.PY2, reason='not in python2')
+    def test_casefold(self):
+        # GH25405
+        expected = Series(['ss', NA, 'case', 'ssd'])
+        s = Series(['ß', NA, 'case', 'ßd'])
+        result = s.str.casefold()
+
+        tm.assert_series_equal(result, expected)

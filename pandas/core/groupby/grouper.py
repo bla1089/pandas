@@ -8,7 +8,7 @@ import warnings
 import numpy as np
 
 import pandas.compat as compat
-from pandas.compat import callable, zip
+from pandas.compat import zip
 from pandas.util._decorators import cache_readonly
 
 from pandas.core.dtypes.common import (
@@ -54,14 +54,17 @@ class Grouper(object):
     axis : number/name of the axis, defaults to 0
     sort : boolean, default to False
         whether to sort the resulting labels
-
-    additional kwargs to control time-like groupers (when `freq` is passed)
-
-    closed : closed end of interval; 'left' or 'right'
-    label : interval boundary to use for labeling; 'left' or 'right'
+    closed : {'left' or 'right'}
+        Closed end of interval. Only when `freq` parameter is passed.
+    label : {'left' or 'right'}
+        Interval boundary to use for labeling.
+        Only when `freq` parameter is passed.
     convention : {'start', 'end', 'e', 's'}
-        If grouper is PeriodIndex
-    base, loffset
+        If grouper is PeriodIndex and `freq` parameter is passed.
+    base : int, default 0
+        Only when `freq` parameter is passed.
+    loffset : string, DateOffset, timedelta object
+        Only when `freq` parameter is passed.
 
     Returns
     -------
@@ -195,9 +198,9 @@ class Grouper(object):
         return self.grouper.groups
 
     def __repr__(self):
-        attrs_list = ["{}={!r}".format(attr_name, getattr(self, attr_name))
+        attrs_list = ("{}={!r}".format(attr_name, getattr(self, attr_name))
                       for attr_name in self._attributes
-                      if getattr(self, attr_name) is not None]
+                      if getattr(self, attr_name) is not None)
         attrs = ", ".join(attrs_list)
         cls_name = self.__class__.__name__
         return "{}({})".format(cls_name, attrs)
@@ -257,7 +260,7 @@ class Grouping(object):
         if level is not None:
             if not isinstance(level, int):
                 if level not in index.names:
-                    raise AssertionError('Level %s not in index' % str(level))
+                    raise AssertionError('Level {} not in index'.format(level))
                 level = index.names.index(level)
 
             if self.name is None:
@@ -299,6 +302,7 @@ class Grouping(object):
                 self._labels = self.grouper.codes
                 if observed:
                     codes = algorithms.unique1d(self.grouper.codes)
+                    codes = codes[codes != -1]
                 else:
                     codes = np.arange(len(categories))
 
@@ -317,7 +321,8 @@ class Grouping(object):
                                 (Series, Index, ExtensionArray, np.ndarray)):
                 if getattr(self.grouper, 'ndim', 1) != 1:
                     t = self.name or str(type(self.grouper))
-                    raise ValueError("Grouper for '%s' not 1-dimensional" % t)
+                    raise ValueError(
+                        "Grouper for '{}' not 1-dimensional".format(t))
                 self.grouper = self.index.map(self.grouper)
                 if not (hasattr(self.grouper, "__len__") and
                         len(self.grouper) == len(self.index)):
@@ -460,11 +465,11 @@ def _get_grouper(obj, key=None, axis=0, level=None, sort=True,
 
             if isinstance(level, compat.string_types):
                 if obj.index.name != level:
-                    raise ValueError('level name %s is not the name of the '
-                                     'index' % level)
+                    raise ValueError('level name {} is not the name of the '
+                                     'index'.format(level))
             elif level > 0 or level < -1:
-                raise ValueError('level > 0 or level < -1 only valid with '
-                                 ' MultiIndex')
+                raise ValueError(
+                    'level > 0 or level < -1 only valid with MultiIndex')
 
             # NOTE: `group_axis` and `group_axis.get_level_values(level)`
             # are same in this section.

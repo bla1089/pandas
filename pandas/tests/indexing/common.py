@@ -156,7 +156,7 @@ class Base(object):
         with catch_warnings(record=True):
             try:
                 xp = getattr(obj, method).__getitem__(_axify(obj, key, axis))
-            except:
+            except AttributeError:
                 xp = getattr(obj, method).__getitem__(key)
 
         return xp
@@ -219,7 +219,7 @@ class Base(object):
 
                 try:
                     xp = self.get_result(obj, method2, k2, a)
-                except:
+                except Exception:
                     result = 'no comp'
                     _print(result)
                     return
@@ -233,8 +233,6 @@ class Base(object):
                         tm.assert_series_equal(rs, xp)
                     elif xp.ndim == 2:
                         tm.assert_frame_equal(rs, xp)
-                    elif xp.ndim == 3:
-                        tm.assert_panel_equal(rs, xp)
                     result = 'ok'
                 except AssertionError as e:
                     detail = str(e)

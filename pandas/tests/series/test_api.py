@@ -204,6 +204,11 @@ class SharedWithSparse(object):
         with tm.assert_produces_warning(FutureWarning):
             self.series_klass.from_array([1, 2, 3])
 
+    def test_sparse_accessor_updates_on_inplace(self):
+        s = pd.Series([1, 1, 2, 3], dtype="Sparse[int]")
+        s.drop([0, 1], inplace=True)
+        assert s.sparse.density == 1.0
+
 
 class TestSeriesMisc(TestData, SharedWithSparse):
 
@@ -240,10 +245,11 @@ class TestSeriesMisc(TestData, SharedWithSparse):
 
     def test_tab_completion_with_categorical(self):
         # test the tab completion display
-        ok_for_cat = ['categories', 'codes', 'ordered', 'set_categories',
-                      'add_categories', 'remove_categories',
-                      'rename_categories', 'reorder_categories',
-                      'remove_unused_categories', 'as_ordered', 'as_unordered']
+        ok_for_cat = ['name', 'index', 'categorical', 'categories', 'codes',
+                      'ordered', 'set_categories', 'add_categories',
+                      'remove_categories', 'rename_categories',
+                      'reorder_categories', 'remove_unused_categories',
+                      'as_ordered', 'as_unordered']
 
         def get_dir(s):
             results = [r for r in s.cat.__dir__() if not r.startswith('_')]
@@ -283,8 +289,11 @@ class TestSeriesMisc(TestData, SharedWithSparse):
     def test_not_hashable(self):
         s_empty = Series()
         s = Series([1])
-        pytest.raises(TypeError, hash, s_empty)
-        pytest.raises(TypeError, hash, s)
+        msg = "'Series' objects are mutable, thus they cannot be hashed"
+        with pytest.raises(TypeError, match=msg):
+            hash(s_empty)
+        with pytest.raises(TypeError, match=msg):
+            hash(s)
 
     def test_contains(self):
         tm.assert_contains_all(self.ts.index, self.ts)
@@ -327,7 +336,8 @@ class TestSeriesMisc(TestData, SharedWithSparse):
 
     def test_raise_on_info(self):
         s = Series(np.random.randn(10))
-        with pytest.raises(AttributeError):
+        msg = "'Series' object has no attribute 'info'"
+        with pytest.raises(AttributeError, match=msg):
             s.info()
 
     def test_copy(self):
@@ -447,6 +457,11 @@ class TestSeriesMisc(TestData, SharedWithSparse):
         exp = Series([], dtype='float64', index=Index([], dtype='float64'))
         tm.assert_series_equal(result, exp)
 
+    def test_str_accessor_updates_on_inplace(self):
+        s = pd.Series(list('abc'))
+        s.drop([0], inplace=True)
+        assert len(s.str.lower()) == 2
+
     def test_str_attribute(self):
         # GH9068
         methods = ['strip', 'rstrip', 'lstrip']
@@ -535,18 +550,26 @@ class TestCategoricalSeries(object):
                            match="You cannot add any new attribute"):
             c.cat.xlabel = "a"
 
+    def test_cat_accessor_updates_on_inplace(self):
+        s = Series(list('abc')).astype('category')
+        s.drop(0, inplace=True)
+        s.cat.remove_unused_categories(inplace=True)
+        assert len(s.cat.categories) == 2
+
     def test_categorical_delegations(self):
 
         # invalid accessor
-        pytest.raises(AttributeError, lambda: Series([1, 2, 3]).cat)
-        with pytest.raises(AttributeError,
-                           match=(r"Can only use .cat accessor "
-                                  r"with a 'category' dtype")):
+        msg = r"Can only use \.cat accessor with a 'category' dtype"
+        with pytest.raises(AttributeError, match=msg):
+            Series([1, 2, 3]).cat
+        with pytest.raises(AttributeError, match=msg):
             Series([1, 2, 3]).cat()
-        pytest.raises(AttributeError, lambda: Series(['a', 'b', 'c']).cat)
-        pytest.raises(AttributeError, lambda: Series(np.arange(5.)).cat)
-        pytest.raises(AttributeError,
-                      lambda: Series([Timestamp('20130101')]).cat)
+        with pytest.raises(AttributeError, match=msg):
+            Series(['a', 'b', 'c']).cat
+        with pytest.raises(AttributeError, match=msg):
+            Series(np.arange(5.)).cat
+        with pytest.raises(AttributeError, match=msg):
+            Series([Timestamp('20130101')]).cat
 
         # Series should delegate calls to '.categories', '.codes', '.ordered'
         # and the methods '.set_categories()' 'drop_unused_categories()' to the
@@ -588,10 +611,10 @@ class TestCategoricalSeries(object):
 
         # This method is likely to be confused, so test that it raises an error
         # on wrong inputs:
-        def f():
+        msg = "'Series' object has no attribute 'set_categories'"
+        with pytest.raises(AttributeError, match=msg):
             s.set_categories([4, 3, 2, 1])
 
-        pytest.raises(Exception, f)
         # right: s.cat.set_categories([4,3,2,1])
 
         # GH18862 (let Series.cat.rename_categories take callables)
@@ -601,82 +624,6 @@ class TestCategoricalSeries(object):
                                       categories=["A", "B", "C"],
                                       ordered=True))
         tm.assert_series_equal(result, expected)
-
-    def test_str_accessor_api_for_categorical(self):
-        # https://github.com/pandas-dev/pandas/issues/10661
-        from pandas.core.strings import StringMethods
-        s = Series(list('aabb'))
-        s = s + " " + s
-        c = s.astype('category')
-        assert isinstance(c.str, StringMethods)
-
-        # str functions, which need special arguments
-        special_func_defs = [
-            ('cat', (list("zyxw"),), {"sep": ","}),
-            ('center', (10,), {}),
-            ('contains', ("a",), {}),
-            ('count', ("a",), {}),
-            ('decode', ("UTF-8",), {}),
-            ('encode', ("UTF-8",), {}),
-            ('endswith', ("a",), {}),
-            ('extract', ("([a-z]*) ",), {"expand": False}),
-            ('extract', ("([a-z]*) ",), {"expand": True}),
-            ('extractall', ("([a-z]*) ",), {}),
-            ('find', ("a",), {}),
-            ('findall', ("a",), {}),
-            ('index', (" ",), {}),
-            ('ljust', (10,), {}),
-            ('match', ("a"), {}),  # deprecated...
-            ('normalize', ("NFC",), {}),
-            ('pad', (10,), {}),
-            ('partition', (" ",), {"expand": False}),  # not default
-            ('partition', (" ",), {"expand": True}),  # default
-            ('repeat', (3,), {}),
-            ('replace', ("a", "z"), {}),
-            ('rfind', ("a",), {}),
-            ('rindex', (" ",), {}),
-            ('rjust', (10,), {}),
-            ('rpartition', (" ",), {"expand": False}),  # not default
-            ('rpartition', (" ",), {"expand": True}),  # default
-            ('slice', (0, 1), {}),
-            ('slice_replace', (0, 1, "z"), {}),
-            ('split', (" ",), {"expand": False}),  # default
-            ('split', (" ",), {"expand": True}),  # not default
-            ('startswith', ("a",), {}),
-            ('wrap', (2,), {}),
-            ('zfill', (10,), {})
-        ]
-        _special_func_names = [f[0] for f in special_func_defs]
-
-        # * get, join: they need a individual elements of type lists, but
-        #   we can't make a categorical with lists as individual categories.
-        #   -> `s.str.split(" ").astype("category")` will error!
-        # * `translate` has different interfaces for py2 vs. py3
-        _ignore_names = ["get", "join", "translate"]
-
-        str_func_names = [f for f in dir(s.str) if not (
-            f.startswith("_") or
-            f in _special_func_names or
-            f in _ignore_names)]
-
-        func_defs = [(f, (), {}) for f in str_func_names]
-        func_defs.extend(special_func_defs)
-
-        for func, args, kwargs in func_defs:
-            res = getattr(c.str, func)(*args, **kwargs)
-            exp = getattr(s.str, func)(*args, **kwargs)
-
-            if isinstance(res, DataFrame):
-                tm.assert_frame_equal(res, exp)
-            else:
-                tm.assert_series_equal(res, exp)
-
-        invalid = Series([1, 2, 3]).astype('category')
-        msg = "Can only use .str accessor with string"
-
-        with pytest.raises(AttributeError, match=msg):
-            invalid.str
-        assert not hasattr(invalid, 'str')
 
     def test_dt_accessor_api_for_categorical(self):
         # https://github.com/pandas-dev/pandas/issues/10661
